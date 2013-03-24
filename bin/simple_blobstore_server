@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 
-require_relative "../lib/simple_blobstore_server"
+$LOAD_PATH.unshift(File.expand_path('../../lib', __FILE__))
+require "simple_blobstore_server"
 require "thin"
 
 config_file = nil
