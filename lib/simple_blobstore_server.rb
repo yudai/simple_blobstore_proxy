@@ -10,6 +10,8 @@ require "uuidtools"
 
 require "blobstore_client"
 
+require "simple_blobstore_server/iofork.rb"
+
 module Bosh
   module Blobstore
     class SimpleBlobstoreServer < Sinatra::Base
@@ -80,8 +82,8 @@ module Bosh
         if params[:content] && params[:content][:tempfile]
           # Process uploads coming directly to the simple blobstore
           object_id = generate_object_id
-          tempfile = params[:content][:tempfile]
-          put_file(object_id, tmpfile.pth)
+          tmpfile = params[:content][:tempfile]
+          put_file(object_id, tmpfile.path)
 
           status(200)
           content_type(:text)
@@ -101,19 +103,19 @@ module Bosh
 
       get "/resources/:id" do
         file_name = get_file_name(params[:id])
-
-        # proxy
         unless File.exist?(file_name)
-          begin
-            tmp_file = File.open(File.join(Dir.mktmpdir, "bosh-blob"), "w")
-            @origin.get(params[:id], tmp_file)
-            put_file(params[:id], tmp_file)
-          rescue => BlobstoreError
-            error(404)
+          stream do |io|
+            tmp_file = Tempfile.new("bosh-blob")
+            fork = IOFork.new(io, tmp_file)
+            begin
+              @origin.get(params[:id], fork)
+              tmp_file.close
+              put_file(params[:id], tmp_file.path)
+            rescue
+              # TODO: how to send error code?
+            end
           end
-        end
-
-        if File.exist?(file_name)
+        else
           if @nginx_path
             status(200)
             content_type "application/octet-stream"
@@ -122,8 +124,6 @@ module Bosh
           else
             send_file(file_name)
           end
-        else
-          error(404)
         end
       end
 
